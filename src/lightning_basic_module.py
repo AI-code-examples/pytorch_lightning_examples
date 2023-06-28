@@ -24,6 +24,7 @@ import torch.nn.functional as F
 import torch.optim
 import torchvision.transforms as transforms
 from lightning.pytorch.callbacks import EarlyStopping
+from lightning.pytorch.utilities.model_summary import ModelSummary
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import nn
 from torch.utils.data import DataLoader
@@ -64,31 +65,32 @@ class LitAutoEncoder(pl.LightningModule):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
+        self.example_input_array = torch.Tensor(32, 1, 28, 28)  # 模型每层输出的维度
         pass
 
-    def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
-        x, y = batch
+    def forward(self, x) -> Any:
         x = x.view(x.size(0), -1)
         z = self.encoder(x)
         x_hat = self.decoder(z)
-        train_loss = F.mse_loss(x_hat, x)
+        return x_hat, x
+
+    def batch_step(self, batch):
+        x, _ = batch
+        x_hat, x = self.forward(x)
+        loss = F.mse_loss(x_hat, x)
+        return loss
+
+    def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
+        train_loss = self.batch_step(batch)
         return train_loss
 
     def validation_step(self, batch, batch_idx) -> STEP_OUTPUT:
-        x, y = batch
-        x = x.view(x.size(0), -1)
-        z = self.encoder(x)
-        x_hat = self.decoder(z)
-        val_loss = F.mse_loss(x_hat, x)
+        val_loss = self.batch_step(batch)
         self.log('val_loss', val_loss)
         return val_loss
 
     def test_step(self, batch, batch_idx) -> STEP_OUTPUT:
-        x, y = batch
-        x = x.view(x.size(0), -1)
-        z = self.encoder(x)
-        x_hat = self.decoder(z)
-        test_loss = F.mse_loss(x_hat, x)
+        test_loss = self.batch_step(batch)
         self.log('test_loss', test_loss)
         return test_loss
 
@@ -101,6 +103,9 @@ def main():
     train_loader, valid_loader, test_loader = prepare_dataloader()
     # 初始化 lightning module
     auto_encoder = LitAutoEncoder(Encoder(), Decoder())
+    # 不执行训练，输出模型结构
+    summary = ModelSummary(auto_encoder, max_depth=-1)
+    print(summary)
     lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader)
 
     # lightning_manual_train(auto_encoder, train_loader)
@@ -160,6 +165,12 @@ def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader):
     ]
     trainer = pl.Trainer(
         # limit_train_batches=100,limit_val_batches=10,limit_test_batches=10,
+        # limit_train_batches=0.01,  # 只执行 1% 的训练数据
+        # limit_train_batches=1000,  # 只执行 1000 条训练数据
+        # fast_dev_run=True,  # 只执行一次
+        # fast_dev_run=3,  # 只执行三次
+        # num_sanity_val_steps=2,  # 做两次验证集检测，保证结果是靠谱的
+        # enable_model_summary=False,  # 关闭模型结构输出
         max_epochs=1,
         callbacks=early_stop_callbacks,
         default_root_dir=default_root_dir)  # 日志与权重的输出路径
@@ -178,6 +189,7 @@ class CIFAR10Classifier(pl.LightningModule):
     """使用LitAutoEncoder作为预训练模型
 
     """
+
     def __init__(self):
         self.feature_extractor = LitAutoEncoder.load_from_checkpoint(checkpoint_path)
         self.feature_extractor.freeze()
