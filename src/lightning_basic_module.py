@@ -23,6 +23,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim
 import torchvision.transforms as transforms
+from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import nn
 from torch.utils.data import DataLoader
@@ -78,9 +79,9 @@ class LitAutoEncoder(pl.LightningModule):
         x = x.view(x.size(0), -1)
         z = self.encoder(x)
         x_hat = self.decoder(z)
-        valid_loss = F.mse_loss(x_hat, x)
-        self.log('valid_loss', valid_loss)
-        return valid_loss
+        val_loss = F.mse_loss(x_hat, x)
+        self.log('val_loss', val_loss)
+        return val_loss
 
     def test_step(self, batch, batch_idx) -> STEP_OUTPUT:
         x, y = batch
@@ -152,15 +153,23 @@ def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader):
     :param test_loader:
     :return:
     """
+    # 早停法的定义与设置
+    early_stop_callbacks = [
+        EarlyStopping(monitor='val_loss', mode='min'),
+        # EarlyStopping(monitor='val_accuracy', min_delta=0.00, patience=3, verbose=False, mode='max')
+    ]
     trainer = pl.Trainer(
+        # limit_train_batches=100,limit_val_batches=10,limit_test_batches=10,
         max_epochs=1,
+        callbacks=early_stop_callbacks,
         default_root_dir=default_root_dir)  # 日志与权重的输出路径
     trainer.fit(auto_encoder, train_loader, valid_loader)
     trainer.test(auto_encoder, test_loader)
 
 
 def load_module(x):
-    model = LitAutoEncoder.load_from_checkpoint(os.path.join(default_root_dir, 'checkpoints/checkpoint.ckpt'))
+    checkpoint_path = os.path.join(default_root_dir, 'checkpoints/checkpoint.ckpt')
+    model = LitAutoEncoder.load_from_checkpoint(checkpoint_path)
     model.eval()
     y_hat = model(x)
     return y_hat
