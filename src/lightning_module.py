@@ -11,7 +11,7 @@
 @Version    :   v0.1
 @Time       :   2023/6/28 9:09
 @License    :   (C)Copyright    2018-2023,  zYx.Tom
-@Reference  :   
+@Reference  :   https://lightning.ai/docs/pytorch/latest/starter/introduction.html
 @Description:   
 @Thought    :
 """
