@@ -168,15 +168,31 @@ def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader):
 
 
 def load_module(x):
-    checkpoint_path = os.path.join(default_root_dir, 'checkpoints/checkpoint.ckpt')
     model = LitAutoEncoder.load_from_checkpoint(checkpoint_path)
     model.eval()
     y_hat = model(x)
     return y_hat
 
 
+class CIFAR10Classifier(pl.LightningModule):
+    """使用LitAutoEncoder作为预训练模型
+
+    """
+    def __init__(self):
+        self.feature_extractor = LitAutoEncoder.load_from_checkpoint(checkpoint_path)
+        self.feature_extractor.freeze()
+        self.classifier = nn.Linear(100, 10)
+        pass
+
+    def forward(self, x) -> Any:
+        representations = self.feature_extractor(x)
+        x = self.classifier(representations)
+
+
 # ----------------------------------------------------------------------
 # 小结
 if __name__ == '__main__':
     default_root_dir = os.path.join(os.getcwd(), 'outputs')
+    checkpoint_path = os.path.join(default_root_dir, 'checkpoints/checkpoint.ckpt')
+
     main()
