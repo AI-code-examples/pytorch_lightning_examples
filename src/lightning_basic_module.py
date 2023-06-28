@@ -24,6 +24,7 @@ import torch.nn.functional as F
 import torch.optim
 import torchvision.transforms as transforms
 from lightning.pytorch.callbacks import EarlyStopping
+from lightning.pytorch.profilers import AdvancedProfiler
 from lightning.pytorch.utilities.model_summary import ModelSummary
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import nn
@@ -161,21 +162,26 @@ def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader):
     # 早停法的定义与设置
     early_stop_callbacks = [
         EarlyStopping(monitor='val_loss', mode='min'),
-        # EarlyStopping(monitor='val_accuracy', min_delta=0.00, patience=3, verbose=False, mode='max')
+        EarlyStopping(monitor='val_accuracy', min_delta=0.00, patience=3, verbose=False, mode='max')
     ]
+    profiler = AdvancedProfiler(dirpath=default_root_dir, filename='perf_logs')  # 性能分析详细到函数调用
     trainer = pl.Trainer(
         # limit_train_batches=100,limit_val_batches=10,limit_test_batches=10,
-        # limit_train_batches=0.01,  # 只执行 1% 的训练数据
+        limit_train_batches=0.01, limit_val_batches=0.01, limit_test_batches=0.01,  # 只执行 1% 的数据
         # limit_train_batches=1000,  # 只执行 1000 条训练数据
-        # fast_dev_run=True,  # 只执行一次
-        # fast_dev_run=3,  # 只执行三次
+        # fast_dev_run=True,  # 只执行一次，不执行验证集与测试集
+        # fast_dev_run=3,  # 只执行三次，不执行验证集与测试集
         # num_sanity_val_steps=2,  # 做两次验证集检测，保证结果是靠谱的
-        # enable_model_summary=False,  # 关闭模型结构输出
+        # callbacks=early_stop_callbacks,   # 模型训练过程中回调函数
+        enable_checkpointing=False,  # 关闭模型输出
+        enable_model_summary=False,  # 关闭模型结构输出
+        # profiler='simple',  # 最简单的输出内容
+        # profiler='pytorch',  # 只输出与 pytorch 相关的内容
+        profiler=profiler,  # 以文件形式输出性能分析结果
         max_epochs=1,
-        callbacks=early_stop_callbacks,
         default_root_dir=default_root_dir)  # 日志与权重的输出路径
-    trainer.fit(auto_encoder, train_loader, valid_loader)
-    trainer.test(auto_encoder, test_loader)
+    trainer.fit(auto_encoder, train_loader, valid_loader)  # 模型训练与验证
+    trainer.test(auto_encoder, test_loader)  # 模型测试
 
 
 def load_module(x):
