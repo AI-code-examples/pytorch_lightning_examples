@@ -95,19 +95,23 @@ class LitAutoEncoder(pl.LightningModule):
         self.log('test_loss', test_loss)
         return test_loss
 
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        # ToDo: 也可以支持复杂的前处理或者后处理逻辑
+        return self(batch)
+
     def configure_optimizers(self) -> Any:
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         return optimizer
 
 
 def main():
-    train_loader, valid_loader, test_loader = prepare_dataloader()
+    train_loader, valid_loader, test_loader, predict_loader = prepare_dataloader()
     # 初始化 lightning module
     auto_encoder = LitAutoEncoder(Encoder(), Decoder())
     # 不执行训练，输出模型结构
     summary = ModelSummary(auto_encoder, max_depth=-1)
     print(summary)
-    lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader)
+    lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader, predict_loader)
 
     # lightning_manual_train(auto_encoder, train_loader)
     pass
@@ -132,7 +136,10 @@ def prepare_dataloader():
     # 测试集
     test_set = MNIST(root=data_path, download=True, train=False, transform=transform)
     test_loader = DataLoader(test_set, num_workers=2)
-    return train_loader, valid_loader, test_loader
+    # 预测集
+    predict_set = MNIST(root=data_path, download=True, train=False, transform=transform)
+    predict_loader = DataLoader(predict_set, num_workers=2)
+    return train_loader, valid_loader, test_loader, predict_loader
 
 
 def lightning_manual_train(auto_encoder, train_loader):
@@ -150,13 +157,14 @@ def lightning_manual_train(auto_encoder, train_loader):
         optimizer.zero_grad()
 
 
-def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader):
+def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader, predict_loader):
     """自动使用GPU计算
 
     :param auto_encoder:
     :param train_loader:
     :param valid_loader:
     :param test_loader:
+    :param predict_loader:
     :return:
     """
     # 早停法的定义与设置
@@ -182,6 +190,7 @@ def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader):
         default_root_dir=default_root_dir)  # 日志与权重的输出路径
     trainer.fit(auto_encoder, train_loader, valid_loader)  # 模型训练与验证
     trainer.test(auto_encoder, test_loader)  # 模型测试
+    trainer.predict(auto_encoder, predict_loader)
 
 
 def load_module(x):
@@ -205,6 +214,17 @@ class CIFAR10Classifier(pl.LightningModule):
     def forward(self, x) -> Any:
         representations = self.feature_extractor(x)
         x = self.classifier(representations)
+        pass
+
+
+def predict():
+    model = LitAutoEncoder.load_from_checkpoint(checkpoint_path)
+    model.eval()
+    x = torch.randn(1, 64)
+    with torch.no_grad():
+        y_hat = model(x)
+        pass
+    return y_hat
 
 
 # ----------------------------------------------------------------------
@@ -214,3 +234,4 @@ if __name__ == '__main__':
     checkpoint_path = os.path.join(default_root_dir, 'checkpoints/checkpoint.ckpt')
 
     main()
+    # predict()
