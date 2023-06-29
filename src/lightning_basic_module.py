@@ -19,11 +19,14 @@ import os
 from typing import Any
 
 import lightning.pytorch as pl
+import numpy as np
+import onnxruntime
 import torch
 import torch.nn.functional as F
 import torch.optim
 import torchvision.transforms as transforms
 from lightning.pytorch.callbacks import EarlyStopping
+from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch.profilers import AdvancedProfiler
 from lightning.pytorch.utilities.model_summary import ModelSummary
 from lightning.pytorch.utilities.types import STEP_OUTPUT
@@ -83,6 +86,7 @@ class LitAutoEncoder(pl.LightningModule):
 
     def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
         train_loss = self.batch_step(batch)
+        self.any_lightning_module_function_or_hook()
         return train_loss
 
     def validation_step(self, batch, batch_idx) -> STEP_OUTPUT:
@@ -97,11 +101,17 @@ class LitAutoEncoder(pl.LightningModule):
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         # ToDo: 也可以支持复杂的前处理或者后处理逻辑
-        return self(batch)
+        return self.batch_step(batch)
 
     def configure_optimizers(self) -> Any:
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         return optimizer
+
+    def any_lightning_module_function_or_hook(self):
+        tensorboard_logger = self.logger.experiment
+        fake_images = torch.Tensor(torch.randn((2, 1, 28, 28)))
+        tensorboard_logger.add_images('generated_images', fake_images, 0)
+        # tensorboard_logger.log_graph(model=self, input_array=fake_images)
 
 
 def main():
@@ -112,9 +122,34 @@ def main():
     summary = ModelSummary(auto_encoder, max_depth=-1)
     print(summary)
     lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader, predict_loader)
+    export_onnx(auto_encoder)
 
     # lightning_manual_train(auto_encoder, train_loader)
     pass
+
+
+def inference_onnx():
+    """基于 onnx 执行推理
+
+    :return:
+    """
+    ort_session = onnxruntime.InferenceSession(deploy_file_path)
+    input_name = ort_session.get_inputs()[0].name
+    ort_inputs = {input_name: np.random.randn(32, 1, 28, 28).astype(np.float32)}
+    ort_outs = ort_session.run(None, ort_inputs)
+    pass
+
+
+def export_onnx(auto_encoder):
+    """ 输出模型为 onnx 格式
+
+    :param auto_encoder:
+    :return:
+    """
+    # 设置了 example_input_array，可以不设置 input_sample，直接输出模型
+    auto_encoder.to_onnx(deploy_file_path, export_params=True)
+    # input_sample = torch.randn((1, 1, 28, 28))
+    # auto_encoder.to_onnx(deploy_path, input_sample, export_params=True)
 
 
 def prepare_dataloader():
@@ -172,22 +207,28 @@ def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader, 
         EarlyStopping(monitor='val_loss', mode='min'),
         EarlyStopping(monitor='val_accuracy', min_delta=0.00, patience=3, verbose=False, mode='max')
     ]
-    profiler = AdvancedProfiler(dirpath=default_root_dir, filename='perf_logs')  # 性能分析详细到函数调用
+    profiler = AdvancedProfiler(dirpath=output_path, filename='perf_logs')  # 性能分析详细到函数调用
+    logger = TensorBoardLogger(save_dir=output_path, log_graph=True)
     trainer = pl.Trainer(
-        # limit_train_batches=100,limit_val_batches=10,limit_test_batches=10,
-        limit_train_batches=0.01, limit_val_batches=0.01, limit_test_batches=0.01,  # 只执行 1% 的数据
-        # limit_train_batches=1000,  # 只执行 1000 条训练数据
+        # limit_train_batches=100,
+        # limit_val_batches=10,
+        # limit_test_batches=10,  # 只执行 100 条训练数据
+        limit_train_batches=0.01,
+        limit_val_batches=0.01,
+        limit_test_batches=0.01,
+        limit_predict_batches=0.01,  # 只执行 1% 的数据
         # fast_dev_run=True,  # 只执行一次，不执行验证集与测试集
         # fast_dev_run=3,  # 只执行三次，不执行验证集与测试集
         # num_sanity_val_steps=2,  # 做两次验证集检测，保证结果是靠谱的
-        callbacks=early_stop_callbacks,   # 模型训练过程中回调函数
+        # callbacks=early_stop_callbacks,   # 模型训练过程中回调函数
         enable_checkpointing=False,  # 关闭模型输出
         enable_model_summary=False,  # 关闭模型结构输出
         # profiler='simple',  # 最简单的输出内容
         # profiler='pytorch',  # 只输出与 pytorch 相关的内容
-        profiler=profiler,  # 以文件形式输出性能分析结果
+        # profiler=profiler,  # 以文件形式输出性能分析结果
+        logger=logger,
         max_epochs=1,
-        default_root_dir=default_root_dir)  # 日志与权重的输出路径
+        default_root_dir=output_path)  # 日志与权重的输出路径
     trainer.fit(auto_encoder, train_loader, valid_loader)  # 模型训练与验证
     trainer.test(auto_encoder, test_loader)  # 模型测试
     trainer.predict(auto_encoder, predict_loader)
@@ -232,8 +273,10 @@ def predict():
 # 小结
 if __name__ == '__main__':
     home_path = os.getcwd()
-    default_root_dir = os.path.join(home_path, 'outputs')
-    checkpoint_path = os.path.join(default_root_dir, 'checkpoints/checkpoint.ckpt')
+    output_path = os.path.join(home_path, 'outputs')
+    checkpoint_path = os.path.join(output_path, 'checkpoints/checkpoint.ckpt')
+    deploy_file_path = os.path.join(output_path, 'deploy', 'onnx', 'LitAutoEncoder.onnx')
 
-    main()
+    # main()
     # predict()
+    inference_onnx()
