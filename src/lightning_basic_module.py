@@ -120,7 +120,7 @@ def main():
 def prepare_dataloader():
     # 数据集准备
     transform = transforms.ToTensor()  # 数据变换操作列表
-    data_path = os.path.join(os.getcwd(), 'data')
+    data_path = os.path.join(home_path, 'data')
     data_set = MNIST(root=data_path, download=True, train=True, transform=transform)
     data_set_size = len(data_set)
     train_set_size = int(data_set_size * 0.8)
@@ -180,7 +180,7 @@ def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader, 
         # fast_dev_run=True,  # 只执行一次，不执行验证集与测试集
         # fast_dev_run=3,  # 只执行三次，不执行验证集与测试集
         # num_sanity_val_steps=2,  # 做两次验证集检测，保证结果是靠谱的
-        # callbacks=early_stop_callbacks,   # 模型训练过程中回调函数
+        callbacks=early_stop_callbacks,   # 模型训练过程中回调函数
         enable_checkpointing=False,  # 关闭模型输出
         enable_model_summary=False,  # 关闭模型结构输出
         # profiler='simple',  # 最简单的输出内容
@@ -206,6 +206,7 @@ class CIFAR10Classifier(pl.LightningModule):
     """
 
     def __init__(self):
+        super().__init__()
         self.feature_extractor = LitAutoEncoder.load_from_checkpoint(checkpoint_path)
         self.feature_extractor.freeze()
         self.classifier = nn.Linear(100, 10)
@@ -214,7 +215,7 @@ class CIFAR10Classifier(pl.LightningModule):
     def forward(self, x) -> Any:
         representations = self.feature_extractor(x)
         x = self.classifier(representations)
-        pass
+        return x
 
 
 def predict():
@@ -230,7 +231,8 @@ def predict():
 # ----------------------------------------------------------------------
 # 小结
 if __name__ == '__main__':
-    default_root_dir = os.path.join(os.getcwd(), 'outputs')
+    home_path = os.getcwd()
+    default_root_dir = os.path.join(home_path, 'outputs')
     checkpoint_path = os.path.join(default_root_dir, 'checkpoints/checkpoint.ckpt')
 
     main()
