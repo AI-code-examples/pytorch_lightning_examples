@@ -208,7 +208,9 @@ def lightning_auto_train(auto_encoder, train_loader, valid_loader, test_loader, 
         EarlyStopping(monitor='val_accuracy', min_delta=0.00, patience=3, verbose=False, mode='max')
     ]
     profiler = AdvancedProfiler(dirpath=output_path, filename='perf_logs')  # 性能分析详细到函数调用
-    logger = TensorBoardLogger(save_dir=output_path, log_graph=True)
+    logger = TensorBoardLogger(save_dir=output_path, log_graph=True, default_hp_metric=None)
+    logger._log_graph = True
+    logger._default_hp_metric = None
     trainer = pl.Trainer(
         # limit_train_batches=100,
         # limit_val_batches=10,
@@ -277,6 +279,6 @@ if __name__ == '__main__':
     checkpoint_path = os.path.join(output_path, 'checkpoints/checkpoint.ckpt')
     deploy_file_path = os.path.join(output_path, 'deploy', 'onnx', 'LitAutoEncoder.onnx')
 
-    # main()
+    main()
     # predict()
-    inference_onnx()
+    # inference_onnx()
